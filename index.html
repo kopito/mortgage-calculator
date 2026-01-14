@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="Compare mortgage repayment paths with and without an offset account" />
+  <meta name="theme-color" content="#22d3ee" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Mortgage Calc" />
+  <title>Mortgage Amortization Calculator</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --card: #1f2937;
+      --muted: #94a3b8;
+      --text: #e5e7eb;
+      --accent: #22d3ee;
+      --accent-2: #a855f7;
+      --danger: #f87171;
+      --success: #4ade80;
+      --border: #1f2937;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #0b1224 0%, #0f172a 50%, #0d1323 100%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 32px;
+    }
+    h1 { margin: 0 0 4px; font-size: 28px; font-weight: 700; color: #f8fafc; }
+    p.lead { margin: 0 0 24px; color: var(--muted); }
+    .layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+    }
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 6px;
+    }
+    input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid #1f2937;
+      background: #0f172a;
+      color: #f8fafc;
+      font-size: 14px;
+      transition: border 0.15s ease, box-shadow 0.15s ease;
+    }
+    input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.25);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .actions {
+      margin-top: 16px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 12px 16px;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.2s ease;
+    }
+    button.primary {
+      background: linear-gradient(135deg, #22d3ee, #6366f1);
+      color: #0b1224;
+      box-shadow: 0 10px 25px rgba(99, 102, 241, 0.35);
+    }
+    button.secondary {
+      background: #0f172a;
+      color: var(--text);
+      border: 1px solid #1f2937;
+    }
+    button:hover { transform: translateY(-1px) scale(1.01); }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .stat {
+      background: #111827;
+      border: 1px solid #1f2937;
+      padding: 14px;
+      border-radius: 12px;
+    }
+    .stat label { color: var(--muted); font-weight: 500; margin-bottom: 4px; }
+    .stat .value { font-size: 18px; font-weight: 700; }
+    .chip {
+      display: inline-flex;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(34, 211, 238, 0.15);
+      color: #a5f3fc;
+      border: 1px solid rgba(34, 211, 238, 0.35);
+      font-weight: 600;
+      font-size: 12px;
+      align-items: center;
+      gap: 6px;
+    }
+    .toggle {
+      display: inline-flex;
+      gap: 10px;
+      align-items: center;
+      background: #0f172a;
+      border: 1px solid #1f2937;
+      padding: 8px 10px;
+      border-radius: 12px;
+    }
+    .chart-card {
+      height: 440px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      color: #e2e8f0;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 10px 8px;
+      border-bottom: 1px solid #1f2937;
+      text-align: left;
+    }
+    th { color: #cbd5e1; font-weight: 600; }
+    .muted { color: var(--muted); }
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .pill.green { background: rgba(74, 222, 128, 0.15); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.35); }
+    .pill.red { background: rgba(248, 113, 113, 0.15); color: #fca5a5; border: 1px solid rgba(248, 113, 113, 0.35); }
+    @media (max-width: 980px) {
+      body { padding: 18px; }
+      .layout { grid-template-columns: 1fr; }
+      .stat-grid { grid-template-columns: 1fr; }
+      .grid { grid-template-columns: 1fr; }
+      h1 { font-size: 24px; }
+      .chart-card { height: 360px; }
+    }
+    @media (max-width: 480px) {
+      body { padding: 12px; }
+      .card { padding: 16px; }
+      .chart-card { height: 300px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+      <div>
+        <h1>Mortgage Amortization Dashboard</h1>
+        <p class="lead">Compare repayment paths with and without an offset account.</p>
+      </div>
+      <div class="chip">Powered by Chart.js</div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <section class="card">
+      <h2>Loan Inputs</h2>
+      <div class="grid">
+        <div>
+          <label for="principal">Loan Amount ($)</label>
+          <input id="principal" type="number" min="1" step="1000" value="600000" />
+        </div>
+        <div>
+          <label for="rate">Annual Interest Rate (%)</label>
+          <input id="rate" type="number" min="0" step="0.01" value="6.5" />
+        </div>
+        <div>
+          <label for="years">Term (Years)</label>
+          <input id="years" type="number" min="1" step="1" value="30" />
+        </div>
+        <div>
+          <label for="offset">Offset Balance ($)</label>
+          <input id="offset" type="number" min="0" step="500" value="80000" />
+        </div>
+      </div>
+      <div class="actions">
+        <button id="calc" class="primary">Calculate</button>
+        <button id="reset" class="secondary">Reset</button>
+        <label class="toggle">
+          <input id="showBoth" type="checkbox" checked />
+          <span>Compare with & without offset</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="card chart-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <div>
+          <h2>Balance Over Time</h2>
+          <p class="muted" style="margin:0;">Monthly remaining balance projection</p>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <span class="pill green">With Offset</span>
+          <span class="pill red">Without Offset</span>
+        </div>
+      </div>
+      <canvas id="chart" height="320"></canvas>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:16px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <h2>Summary</h2>
+      <div class="chip" id="timeSavedChip">Time saved: 0 months</div>
+    </div>
+    <div class="stat-grid" style="margin-top:10px;">
+      <div class="stat">
+        <label>Total Interest (With Offset)</label>
+        <div class="value" id="interestWith">$0</div>
+        <div class="muted" id="interestWithPct">—</div>
+      </div>
+      <div class="stat">
+        <label>Total Interest (Without Offset)</label>
+        <div class="value" id="interestWithout">$0</div>
+        <div class="muted">Baseline interest</div>
+      </div>
+      <div class="stat">
+        <label>Principal Paid</label>
+        <div class="value" id="principalPaid">$0</div>
+        <div class="muted">Total principal over term</div>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Scenario</th>
+          <th>Months</th>
+          <th>Total Interest</th>
+          <th>Total Principal</th>
+          <th>Time Saved</th>
+        </tr>
+      </thead>
+      <tbody id="summaryRows"></tbody>
+    </table>
+  </section>
+
+  <script>
+    const fmtCurrency = (v) =>
+      v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+
+    const fmtMonths = (m) => `${Math.floor(m / 12)}y ${m % 12}m`;
+
+    function monthlyPayment(principal, annualRate, years) {
+      const n = years * 12;
+      const r = annualRate / 12 / 100;
+      if (r === 0) return principal / n;
+      return principal * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+    }
+
+    function buildSchedule(principal, annualRate, years, offsetBalance) {
+      const payment = monthlyPayment(principal, annualRate, years);
+      const r = annualRate / 12 / 100;
+      let balance = principal;
+      let month = 0;
+      const balances = [balance];
+      let totalInterest = 0;
+      let totalPrincipal = 0;
+      const maxMonths = years * 12 + 120; // guardrail
+
+      while (balance > 0 && month < maxMonths) {
+        month += 1;
+        const effectiveBalance = Math.max(0, balance - offsetBalance);
+        const interest = effectiveBalance * r;
+        let principalPaid = payment - interest;
+        // Ensure we do not overpay on the final installment
+        if (principalPaid > balance) {
+          principalPaid = balance;
+        }
+        balance = Math.max(0, balance - principalPaid);
+        totalInterest += interest;
+        totalPrincipal += principalPaid;
+        balances.push(balance);
+        if (balance === 0) break;
+      }
+      return { balances, payment, totalInterest, totalPrincipal, months: month };
+    }
+
+    const chartCtx = document.getElementById('chart').getContext('2d');
+    let chart;
+
+    function render(principal, rate, years, offset, showBoth) {
+      const withOffset = buildSchedule(principal, rate, years, offset);
+      const withoutOffset = buildSchedule(principal, rate, years, 0);
+
+      const maxMonths = Math.max(withOffset.balances.length, withoutOffset.balances.length);
+      const labels = Array.from({ length: maxMonths }, (_, i) => i);
+
+      if (chart) chart.destroy();
+      chart = new Chart(chartCtx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'With Offset',
+              data: withOffset.balances,
+              tension: 0.15,
+              borderColor: '#4ade80',
+              backgroundColor: 'rgba(74, 222, 128, 0.15)',
+              borderWidth: 3,
+              fill: true,
+              hidden: false
+            },
+            {
+              label: 'Without Offset',
+              data: withoutOffset.balances,
+              tension: 0.15,
+              borderColor: '#f87171',
+              backgroundColor: 'rgba(248, 113, 113, 0.12)',
+              borderWidth: 2,
+              borderDash: [6, 4],
+              fill: true,
+              hidden: !showBoth
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: '#e5e7eb', usePointStyle: true } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${fmtCurrency(ctx.parsed.y)}`
+              }
+            }
+          },
+          scales: {
+            x: { ticks: { color: '#9ca3af' }, title: { display: true, text: 'Month', color: '#9ca3af' }, grid: { color: '#1f2937' } },
+            y: { ticks: { color: '#9ca3af' }, title: { display: true, text: 'Balance ($)', color: '#9ca3af' }, grid: { color: '#1f2937' } }
+          }
+        }
+      });
+
+      updateSummary(withOffset, withoutOffset, offset);
+    }
+
+    function updateSummary(withOffset, withoutOffset, offset) {
+      const interestSaved = withoutOffset.totalInterest - withOffset.totalInterest;
+      document.getElementById('interestWith').textContent = fmtCurrency(withOffset.totalInterest);
+      document.getElementById('interestWithout').textContent = fmtCurrency(withoutOffset.totalInterest);
+      document.getElementById('principalPaid').textContent = fmtCurrency(withoutOffset.totalPrincipal);
+
+      const pct = withoutOffset.totalInterest > 0
+        ? (interestSaved / withoutOffset.totalInterest) * 100
+        : 0;
+      document.getElementById('interestWithPct').textContent =
+        `Saves ${fmtCurrency(interestSaved)} (${pct.toFixed(1)}%) via $${offset.toLocaleString()} offset`;
+
+      const timeSaved = Math.max(0, withoutOffset.months - withOffset.months);
+      document.getElementById('timeSavedChip').textContent = `Time saved: ${timeSaved} months`;
+
+      const tbody = document.getElementById('summaryRows');
+      tbody.innerHTML = '';
+      const rows = [
+        {
+          label: 'With Offset',
+          months: withOffset.months,
+          interest: withOffset.totalInterest,
+          principal: withOffset.totalPrincipal,
+          time: `-${timeSaved} mo`
+        },
+        {
+          label: 'Without Offset',
+          months: withoutOffset.months,
+          interest: withoutOffset.totalInterest,
+          principal: withoutOffset.totalPrincipal,
+          time: 'Baseline'
+        }
+      ];
+      rows.forEach((row, idx) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="display:flex; align-items:center; gap:8px;">
+            <span class="pill ${idx === 0 ? 'green' : 'red'}">${row.label}</span>
+          </td>
+          <td>${fmtMonths(row.months)}</td>
+          <td>${fmtCurrency(row.interest)}</td>
+          <td>${fmtCurrency(row.principal)}</td>
+          <td>${row.time}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function readInputs() {
+      const principal = Number(document.getElementById('principal').value) || 0;
+      const rate = Number(document.getElementById('rate').value) || 0;
+      const years = Number(document.getElementById('years').value) || 0;
+      const offset = Number(document.getElementById('offset').value) || 0;
+      return { principal, rate, years, offset };
+    }
+
+    function validateInputs({ principal, rate, years }) {
+      if (principal <= 0) return 'Principal must be greater than zero.';
+      if (rate < 0) return 'Rate cannot be negative.';
+      if (years <= 0) return 'Term must be at least 1 year.';
+      return null;
+    }
+
+    function calculate() {
+      const values = readInputs();
+      const error = validateInputs(values);
+      if (error) {
+        alert(error);
+        return;
+      }
+      const showBoth = document.getElementById('showBoth').checked;
+      render(values.principal, values.rate, values.years, values.offset, showBoth);
+    }
+
+    document.getElementById('calc').addEventListener('click', calculate);
+    document.getElementById('reset').addEventListener('click', () => {
+      document.getElementById('principal').value = 600000;
+      document.getElementById('rate').value = 6.5;
+      document.getElementById('years').value = 30;
+      document.getElementById('offset').value = 80000;
+      document.getElementById('showBoth').checked = true;
+      calculate();
+    });
+    document.getElementById('showBoth').addEventListener('change', calculate);
+    ['principal', 'rate', 'years', 'offset'].forEach(id => {
+      document.getElementById(id).addEventListener('change', calculate);
+      document.getElementById(id).addEventListener('keyup', (e) => {
+        if (e.key === 'Enter') calculate();
+      });
+    });
+
+    // Initial render
+    calculate();
+
+    // Register Service Worker for PWA
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then((reg) => console.log('Service Worker registered'))
+          .catch((err) => console.log('Service Worker registration failed:', err));
+      });
+    }
+  </script>
+</body>
+</html>

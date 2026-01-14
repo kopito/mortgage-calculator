@@ -1,0 +1,16 @@
+{
+  "appId": "com.mortgagecalc.app",
+  "appName": "Mortgage Calculator",
+  "webDir": ".",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "buildOptions": {
+      "keystorePath": "",
+      "keystorePassword": "",
+      "keystoreAlias": "",
+      "keystoreAliasPassword": ""
+    }
+  }
+}
