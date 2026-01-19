@@ -36,6 +36,17 @@
       min-height: 100vh;
       padding: 32px;
     }
+    .app-container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    body.embed {
+      padding: 16px;
+      background: transparent;
+    }
+    body.embed .app-container {
+      max-width: 100%;
+    }
     h1 { margin: 0 0 4px; font-size: 28px; font-weight: 700; color: #f8fafc; }
     p.lead { margin: 0 0 24px; color: var(--muted); }
     .layout {
@@ -210,6 +221,7 @@
   </style>
 </head>
 <body>
+  <div class="app-container">
   <header>
     <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
       <div>
@@ -1183,6 +1195,11 @@
     renderCountryButtons();
     applyCountry(activeCountry);
 
+    // Enable embed-friendly layout when used inside Wix iframes
+    if (window.self !== window.top) {
+      document.body.classList.add('embed');
+    }
+
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
@@ -1192,5 +1209,6 @@
       });
     }
   </script>
+  </div>
 </body>
 </html>
