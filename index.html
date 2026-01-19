@@ -129,7 +129,7 @@
     button:hover { transform: translateY(-1px) scale(1.01); }
     .stat-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 12px;
     }
     .stat {
@@ -215,10 +215,16 @@
 
   <div class="layout">
     <section class="card">
+      <h2>Select Country</h2>
+      <div id="countryButtons" style="display:flex; gap:10px; flex-wrap:wrap;"></div>
+      <p class="muted" style="margin:10px 0 0;">Country selection prepares region-specific settings.</p>
+    </section>
+
+    <section class="card">
       <h2>Loan Inputs</h2>
       <div class="grid">
         <div>
-          <label for="principal">Loan Amount ($)</label>
+          <label for="principal" id="labelPrincipal">Loan Amount</label>
           <input id="principal" type="number" min="1" step="1000" value="600000" />
         </div>
         <div>
@@ -226,11 +232,19 @@
           <input id="rate" type="number" min="0" step="0.01" value="6.5" />
         </div>
         <div>
+          <label for="frequency">Repayment Frequency</label>
+          <select id="frequency">
+            <option value="monthly" selected>Monthly</option>
+            <option value="biweekly">Biweekly</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </div>
+        <div>
           <label for="years">Term (Years)</label>
           <input id="years" type="number" min="1" step="1" value="30" />
         </div>
         <div>
-          <label for="offset">Offset Balance ($)</label>
+          <label for="offset" id="labelOffset">Offset Balance</label>
           <input id="offset" type="number" min="0" step="500" value="80000" />
         </div>
         <div>
@@ -299,6 +313,11 @@
         <div class="value" id="principalPaid">$0</div>
         <div class="muted">Total principal over term</div>
       </div>
+      <div class="stat">
+        <label>Payment Amount</label>
+        <div class="value" id="paymentAmount">$0</div>
+        <div class="muted" id="paymentFrequencyLabel">Per payment</div>
+      </div>
     </div>
 
     <table>
@@ -333,21 +352,39 @@
   </section>
 
   <script>
-    const fmtCurrency = (v) =>
-      v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+    let activeCountry = 'AU';
+    const countries = {
+      AU: { name: 'Australia', currency: 'AUD', locale: 'en-AU', defaults: { principal: 600000, rate: 6.5, years: 30, offset: 80000 } },
+      IL: { name: 'Israel', currency: 'ILS', locale: 'he-IL', defaults: { principal: 1500000, rate: 5.2, years: 25, offset: 100000 } },
+      US: { name: 'USA', currency: 'USD', locale: 'en-US', defaults: { principal: 450000, rate: 6.2, years: 30, offset: 50000 } },
+      UK: { name: 'UK', currency: 'GBP', locale: 'en-GB', defaults: { principal: 350000, rate: 5.0, years: 25, offset: 40000 } },
+      FR: { name: 'France', currency: 'EUR', locale: 'fr-FR', defaults: { principal: 300000, rate: 4.0, years: 25, offset: 30000 } },
+      DE: { name: 'Germany', currency: 'EUR', locale: 'de-DE', defaults: { principal: 350000, rate: 4.2, years: 25, offset: 35000 } }
+    };
+
+    const fmtCurrency = (v) => {
+      const { locale, currency } = countries[activeCountry] || countries.AU;
+      return v.toLocaleString(locale, { style: 'currency', currency, maximumFractionDigits: 0 });
+    };
 
     const fmtMonths = (m) => `${Math.floor(m / 12)}y ${m % 12}m`;
 
-    function monthlyPayment(principal, annualRate, years) {
-      const n = years * 12;
-      const r = annualRate / 12 / 100;
+    const frequencyConfig = {
+      monthly: { periodsPerYear: 12, label: 'Monthly' },
+      biweekly: { periodsPerYear: 26, label: 'Biweekly' },
+      weekly: { periodsPerYear: 52, label: 'Weekly' }
+    };
+
+    function periodicPayment(principal, annualRate, years, periodsPerYear) {
+      const n = years * periodsPerYear;
+      const r = annualRate / periodsPerYear / 100;
       if (r === 0) return principal / n;
       return principal * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
     }
 
-    function buildSchedule(principal, annualRate, years, offsetConfig) {
-      const payment = monthlyPayment(principal, annualRate, years);
-      const r = annualRate / 12 / 100;
+    function buildSchedule(principal, annualRate, years, offsetConfig, periodsPerYear) {
+      const payment = periodicPayment(principal, annualRate, years, periodsPerYear);
+      const r = annualRate / periodsPerYear / 100;
       let balance = principal;
       let month = 0;
       let offsetBalance = offsetConfig?.baseOffset ?? 0;
@@ -357,7 +394,7 @@
       const cumulativeInterest = [0];
       const cumulativePrincipal = [0];
       const cumulativeTotal = [0];
-      const maxMonths = years * 12 + 120; // guardrail
+      const maxMonths = years * periodsPerYear + 120; // guardrail
 
       while (balance > 0 && month < maxMonths) {
         month += 1;
@@ -407,9 +444,10 @@
     let chart;
     let cumulativeChart;
 
-    function render(principal, rate, years, offsetConfig, showBoth) {
-      const withOffset = buildSchedule(principal, rate, years, offsetConfig);
-      const withoutOffset = buildSchedule(principal, rate, years, { mode: 'none' });
+    function render(principal, rate, years, offsetConfig, showBoth, frequencyKey) {
+      const freq = frequencyConfig[frequencyKey] || frequencyConfig.monthly;
+      const withOffset = buildSchedule(principal, rate, years, offsetConfig, freq.periodsPerYear);
+      const withoutOffset = buildSchedule(principal, rate, years, { mode: 'none' }, freq.periodsPerYear);
 
       const maxMonths = Math.max(withOffset.balances.length, withoutOffset.balances.length);
       const labels = Array.from({ length: maxMonths }, (_, i) => i);
@@ -456,7 +494,7 @@
             }
           },
           scales: {
-            x: { ticks: { color: '#9ca3af' }, title: { display: true, text: 'Month', color: '#9ca3af' }, grid: { color: '#1f2937' } },
+            x: { ticks: { color: '#9ca3af' }, title: { display: true, text: 'Payment Period', color: '#9ca3af' }, grid: { color: '#1f2937' } },
             y: { ticks: { color: '#9ca3af' }, title: { display: true, text: 'Balance ($)', color: '#9ca3af' }, grid: { color: '#1f2937' } }
           }
         }
@@ -521,26 +559,58 @@
             }
           },
           scales: {
-            x: { ticks: { color: '#9ca3af' }, title: { display: true, text: 'Month', color: '#9ca3af' }, grid: { color: '#1f2937' } },
+            x: { ticks: { color: '#9ca3af' }, title: { display: true, text: 'Payment Period', color: '#9ca3af' }, grid: { color: '#1f2937' } },
             y: { ticks: { color: '#9ca3af' }, title: { display: true, text: 'Cumulative Paid ($)', color: '#9ca3af' }, grid: { color: '#1f2937' } }
           }
         }
       });
 
-      updateSummary(withOffset, withoutOffset, offsetConfig?.baseOffset ?? 0);
+      updateSummary(withOffset, withoutOffset, offsetConfig?.baseOffset ?? 0, withOffset.payment, freq.label);
     }
 
-    function updateSummary(withOffset, withoutOffset, offset) {
+    function applyCountry(countryCode) {
+      activeCountry = countryCode;
+      const config = countries[countryCode] || countries.AU;
+      const currencyLabel = ` (${config.currency})`;
+      document.getElementById('labelPrincipal').textContent = `Loan Amount${currencyLabel}`;
+      document.getElementById('labelOffset').textContent = `Offset Balance${currencyLabel}`;
+      document.getElementById('principal').value = config.defaults.principal;
+      document.getElementById('rate').value = config.defaults.rate;
+      document.getElementById('years').value = config.defaults.years;
+      document.getElementById('offset').value = config.defaults.offset;
+      document.getElementById('frequency').value = 'monthly';
+      calculate();
+    }
+
+    function renderCountryButtons() {
+      const container = document.getElementById('countryButtons');
+      container.innerHTML = '';
+      Object.entries(countries).forEach(([code, data]) => {
+        const btn = document.createElement('button');
+        btn.className = code === activeCountry ? 'primary' : 'secondary';
+        btn.textContent = data.name;
+        btn.addEventListener('click', () => {
+          activeCountry = code;
+          renderCountryButtons();
+          applyCountry(code);
+        });
+        container.appendChild(btn);
+      });
+    }
+
+    function updateSummary(withOffset, withoutOffset, offset, paymentAmount, frequencyLabel) {
       const interestSaved = withoutOffset.totalInterest - withOffset.totalInterest;
       document.getElementById('interestWith').textContent = fmtCurrency(withOffset.totalInterest);
       document.getElementById('interestWithout').textContent = fmtCurrency(withoutOffset.totalInterest);
       document.getElementById('principalPaid').textContent = fmtCurrency(withoutOffset.totalPrincipal);
+      document.getElementById('paymentAmount').textContent = fmtCurrency(paymentAmount);
+      document.getElementById('paymentFrequencyLabel').textContent = `Per ${frequencyLabel.toLowerCase()} payment`;
 
       const pct = withoutOffset.totalInterest > 0
         ? (interestSaved / withoutOffset.totalInterest) * 100
         : 0;
       document.getElementById('interestWithPct').textContent =
-        `Saves ${fmtCurrency(interestSaved)} (${pct.toFixed(1)}%) via $${offset.toLocaleString()} offset`;
+        `Saves ${fmtCurrency(interestSaved)} (${pct.toFixed(1)}%) via ${fmtCurrency(offset)} offset`;
 
       const timeSaved = Math.max(0, withoutOffset.months - withOffset.months);
       document.getElementById('timeSavedChip').textContent = `Time saved: ${timeSaved} months`;
@@ -583,6 +653,7 @@
       const rate = Number(document.getElementById('rate').value) || 0;
       const years = Number(document.getElementById('years').value) || 0;
       const offset = Number(document.getElementById('offset').value) || 0;
+      const frequency = document.getElementById('frequency').value;
       const offsetMode = document.getElementById('offsetMode').value;
       const offsetStartMonth = Number(document.getElementById('offsetStartMonth').value) || 1;
       const offsetEndMonth = Number(document.getElementById('offsetEndMonth').value) || offsetStartMonth;
@@ -592,6 +663,7 @@
         rate,
         years,
         offset,
+        frequency,
         offsetMode,
         offsetStartMonth,
         offsetEndMonth,
@@ -626,7 +698,7 @@
         endMonth: values.offsetEndMonth,
         monthlyAdd: values.offsetMonthlyAdd
       };
-      render(values.principal, values.rate, values.years, offsetConfig, showBoth);
+      render(values.principal, values.rate, values.years, offsetConfig, showBoth, values.frequency);
     }
 
     document.getElementById('calc').addEventListener('click', calculate);
@@ -635,6 +707,7 @@
       document.getElementById('rate').value = 6.5;
       document.getElementById('years').value = 30;
       document.getElementById('offset').value = 80000;
+      document.getElementById('frequency').value = 'monthly';
       document.getElementById('offsetMode').value = 'constant';
       document.getElementById('offsetStartMonth').value = 1;
       document.getElementById('offsetEndMonth').value = 120;
@@ -643,7 +716,7 @@
       calculate();
     });
     document.getElementById('showBoth').addEventListener('change', calculate);
-    ['principal', 'rate', 'years', 'offset', 'offsetMode', 'offsetStartMonth', 'offsetEndMonth', 'offsetMonthlyAdd'].forEach(id => {
+    ['principal', 'rate', 'years', 'offset', 'frequency', 'offsetMode', 'offsetStartMonth', 'offsetEndMonth', 'offsetMonthlyAdd'].forEach(id => {
       document.getElementById(id).addEventListener('change', calculate);
       document.getElementById(id).addEventListener('keyup', (e) => {
         if (e.key === 'Enter') calculate();
@@ -651,7 +724,8 @@
     });
 
     // Initial render
-    calculate();
+    renderCountryButtons();
+    applyCountry(activeCountry);
 
     // Register Service Worker for PWA
     if ('serviceWorker' in navigator) {
