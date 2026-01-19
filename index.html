@@ -72,7 +72,22 @@
       font-size: 14px;
       transition: border 0.15s ease, box-shadow 0.15s ease;
     }
+    select {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid #1f2937;
+      background: #0f172a;
+      color: #f8fafc;
+      font-size: 14px;
+      transition: border 0.15s ease, box-shadow 0.15s ease;
+    }
     input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.25);
+    }
+    select:focus {
       outline: none;
       border-color: var(--accent);
       box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.25);
@@ -218,6 +233,25 @@
           <label for="offset">Offset Balance ($)</label>
           <input id="offset" type="number" min="0" step="500" value="80000" />
         </div>
+        <div>
+          <label for="offsetMode">Offset Mode</label>
+          <select id="offsetMode">
+            <option value="constant" selected>Constant from start month</option>
+            <option value="contribution">Monthly contributions (range)</option>
+          </select>
+        </div>
+        <div>
+          <label for="offsetStartMonth">Offset Start Month</label>
+          <input id="offsetStartMonth" type="number" min="1" step="1" value="1" />
+        </div>
+        <div>
+          <label for="offsetEndMonth">Offset End Month</label>
+          <input id="offsetEndMonth" type="number" min="1" step="1" value="120" />
+        </div>
+        <div>
+          <label for="offsetMonthlyAdd">Monthly Offset Add ($)</label>
+          <input id="offsetMonthlyAdd" type="number" min="0" step="100" value="500" />
+        </div>
       </div>
       <div class="actions">
         <button id="calc" class="primary">Calculate</button>
@@ -281,6 +315,23 @@
     </table>
   </section>
 
+  <section class="card" style="margin-top:16px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:8px;">
+      <div>
+        <h2>Cumulative Payments</h2>
+        <p class="muted" style="margin:0;">Total paid over time: interest vs principal</p>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <span class="pill green">Principal (with offset)</span>
+        <span class="pill red">Interest (with offset)</span>
+        <span class="pill" style="background:rgba(56,189,248,0.15);border:1px solid rgba(56,189,248,0.4);color:#7dd3fc;">Total paid</span>
+      </div>
+    </div>
+    <div style="height:360px;">
+      <canvas id="cumulativeChart" height="280"></canvas>
+    </div>
+  </section>
+
   <script>
     const fmtCurrency = (v) =>
       v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -294,19 +345,36 @@
       return principal * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
     }
 
-    function buildSchedule(principal, annualRate, years, offsetBalance) {
+    function buildSchedule(principal, annualRate, years, offsetConfig) {
       const payment = monthlyPayment(principal, annualRate, years);
       const r = annualRate / 12 / 100;
       let balance = principal;
       let month = 0;
+      let offsetBalance = offsetConfig?.baseOffset ?? 0;
       const balances = [balance];
       let totalInterest = 0;
       let totalPrincipal = 0;
+      const cumulativeInterest = [0];
+      const cumulativePrincipal = [0];
+      const cumulativeTotal = [0];
       const maxMonths = years * 12 + 120; // guardrail
 
       while (balance > 0 && month < maxMonths) {
         month += 1;
-        const effectiveBalance = Math.max(0, balance - offsetBalance);
+
+        let currentOffset = 0;
+        if (!offsetConfig || offsetConfig.mode === 'none') {
+          currentOffset = 0;
+        } else if (offsetConfig.mode === 'constant') {
+          currentOffset = month >= offsetConfig.startMonth ? offsetConfig.baseOffset : 0;
+        } else if (offsetConfig.mode === 'contribution') {
+          if (month >= offsetConfig.startMonth && month <= offsetConfig.endMonth) {
+            offsetBalance += offsetConfig.monthlyAdd;
+          }
+          currentOffset = offsetBalance;
+        }
+
+        const effectiveBalance = Math.max(0, balance - currentOffset);
         const interest = effectiveBalance * r;
         let principalPaid = payment - interest;
         // Ensure we do not overpay on the final installment
@@ -317,17 +385,31 @@
         totalInterest += interest;
         totalPrincipal += principalPaid;
         balances.push(balance);
+        cumulativeInterest.push(totalInterest);
+        cumulativePrincipal.push(totalPrincipal);
+        cumulativeTotal.push(totalInterest + totalPrincipal);
         if (balance === 0) break;
       }
-      return { balances, payment, totalInterest, totalPrincipal, months: month };
+      return {
+        balances,
+        payment,
+        totalInterest,
+        totalPrincipal,
+        months: month,
+        cumulativeInterest,
+        cumulativePrincipal,
+        cumulativeTotal
+      };
     }
 
     const chartCtx = document.getElementById('chart').getContext('2d');
+    const cumulativeCtx = document.getElementById('cumulativeChart').getContext('2d');
     let chart;
+    let cumulativeChart;
 
-    function render(principal, rate, years, offset, showBoth) {
-      const withOffset = buildSchedule(principal, rate, years, offset);
-      const withoutOffset = buildSchedule(principal, rate, years, 0);
+    function render(principal, rate, years, offsetConfig, showBoth) {
+      const withOffset = buildSchedule(principal, rate, years, offsetConfig);
+      const withoutOffset = buildSchedule(principal, rate, years, { mode: 'none' });
 
       const maxMonths = Math.max(withOffset.balances.length, withoutOffset.balances.length);
       const labels = Array.from({ length: maxMonths }, (_, i) => i);
@@ -380,7 +462,72 @@
         }
       });
 
-      updateSummary(withOffset, withoutOffset, offset);
+      if (cumulativeChart) cumulativeChart.destroy();
+      cumulativeChart = new Chart(cumulativeCtx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Cumulative Principal (with offset)',
+              data: withOffset.cumulativePrincipal,
+              tension: 0.15,
+              borderColor: '#22c55e',
+              backgroundColor: 'rgba(34,197,94,0.18)',
+              borderWidth: 2,
+              fill: true
+            },
+            {
+              label: 'Cumulative Interest (with offset)',
+              data: withOffset.cumulativeInterest,
+              tension: 0.15,
+              borderColor: '#f97316',
+              backgroundColor: 'rgba(249,115,22,0.18)',
+              borderWidth: 2,
+              fill: true
+            },
+            {
+              label: 'Cumulative Total Paid (with offset)',
+              data: withOffset.cumulativeTotal,
+              tension: 0.15,
+              borderColor: '#38bdf8',
+              backgroundColor: 'rgba(56,189,248,0.15)',
+              borderWidth: 2,
+              fill: false
+            },
+            {
+              label: 'Cumulative Total Paid (without offset)',
+              data: withoutOffset.cumulativeTotal,
+              tension: 0.15,
+              borderColor: '#f97373',
+              backgroundColor: 'rgba(248,113,113,0.08)',
+              borderWidth: 2,
+              borderDash: [6, 4],
+              fill: false,
+              hidden: !showBoth
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: '#e5e7eb', usePointStyle: true } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${fmtCurrency(ctx.parsed.y)}`
+              }
+            }
+          },
+          scales: {
+            x: { ticks: { color: '#9ca3af' }, title: { display: true, text: 'Month', color: '#9ca3af' }, grid: { color: '#1f2937' } },
+            y: { ticks: { color: '#9ca3af' }, title: { display: true, text: 'Cumulative Paid ($)', color: '#9ca3af' }, grid: { color: '#1f2937' } }
+          }
+        }
+      });
+
+      updateSummary(withOffset, withoutOffset, offsetConfig?.baseOffset ?? 0);
     }
 
     function updateSummary(withOffset, withoutOffset, offset) {
@@ -436,13 +583,31 @@
       const rate = Number(document.getElementById('rate').value) || 0;
       const years = Number(document.getElementById('years').value) || 0;
       const offset = Number(document.getElementById('offset').value) || 0;
-      return { principal, rate, years, offset };
+      const offsetMode = document.getElementById('offsetMode').value;
+      const offsetStartMonth = Number(document.getElementById('offsetStartMonth').value) || 1;
+      const offsetEndMonth = Number(document.getElementById('offsetEndMonth').value) || offsetStartMonth;
+      const offsetMonthlyAdd = Number(document.getElementById('offsetMonthlyAdd').value) || 0;
+      return {
+        principal,
+        rate,
+        years,
+        offset,
+        offsetMode,
+        offsetStartMonth,
+        offsetEndMonth,
+        offsetMonthlyAdd
+      };
     }
 
-    function validateInputs({ principal, rate, years }) {
+    function validateInputs({ principal, rate, years, offsetMode, offsetStartMonth, offsetEndMonth, offsetMonthlyAdd }) {
       if (principal <= 0) return 'Principal must be greater than zero.';
       if (rate < 0) return 'Rate cannot be negative.';
       if (years <= 0) return 'Term must be at least 1 year.';
+      if (offsetStartMonth < 1) return 'Offset start month must be at least 1.';
+      if (offsetMode === 'contribution') {
+        if (offsetMonthlyAdd < 0) return 'Monthly offset add must be zero or more.';
+        if (offsetEndMonth < offsetStartMonth) return 'Offset end month must be after start month.';
+      }
       return null;
     }
 
@@ -454,7 +619,14 @@
         return;
       }
       const showBoth = document.getElementById('showBoth').checked;
-      render(values.principal, values.rate, values.years, values.offset, showBoth);
+      const offsetConfig = {
+        mode: values.offsetMode,
+        baseOffset: values.offset,
+        startMonth: values.offsetStartMonth,
+        endMonth: values.offsetEndMonth,
+        monthlyAdd: values.offsetMonthlyAdd
+      };
+      render(values.principal, values.rate, values.years, offsetConfig, showBoth);
     }
 
     document.getElementById('calc').addEventListener('click', calculate);
@@ -463,11 +635,15 @@
       document.getElementById('rate').value = 6.5;
       document.getElementById('years').value = 30;
       document.getElementById('offset').value = 80000;
+      document.getElementById('offsetMode').value = 'constant';
+      document.getElementById('offsetStartMonth').value = 1;
+      document.getElementById('offsetEndMonth').value = 120;
+      document.getElementById('offsetMonthlyAdd').value = 500;
       document.getElementById('showBoth').checked = true;
       calculate();
     });
     document.getElementById('showBoth').addEventListener('change', calculate);
-    ['principal', 'rate', 'years', 'offset'].forEach(id => {
+    ['principal', 'rate', 'years', 'offset', 'offsetMode', 'offsetStartMonth', 'offsetEndMonth', 'offsetMonthlyAdd'].forEach(id => {
       document.getElementById(id).addEventListener('change', calculate);
       document.getElementById(id).addEventListener('keyup', (e) => {
         if (e.key === 'Enter') calculate();
