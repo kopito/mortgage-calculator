@@ -305,6 +305,7 @@
         <thead>
           <tr>
             <th>Track</th>
+            <th>Type</th>
             <th>Amount</th>
             <th>Interest</th>
             <th>Monthly Payment</th>
@@ -392,6 +393,11 @@
   <script>
     let activeCountry = 'AU';
     let israelTracks = [];
+    const israelTrackTypes = [
+      { id: 'fixed', label: 'Fixed' },
+      { id: 'variable', label: 'Variable' },
+      { id: 'cpi', label: 'CPI-linked' }
+    ];
     const countries = {
       AU: { name: 'Australia', currency: 'AUD', locale: 'en-AU', defaults: { principal: 600000, rate: 6.5, years: 30, offset: 80000 } },
       IL: { name: 'Israel', currency: 'ILS', locale: 'he-IL', defaults: { principal: 1500000, rate: 5.2, years: 25, offset: 100000 } },
@@ -436,6 +442,7 @@
       const interestPayments = [0];
       const principalPayments = [0];
       const totalPayments = [0];
+      const offsetSeries = [0];
       const maxMonths = years * periodsPerYear + 120; // guardrail
 
       while (balance > 0 && month < maxMonths) {
@@ -470,6 +477,7 @@
         interestPayments.push(interest);
         principalPayments.push(principalPaid);
         totalPayments.push(interest + principalPaid);
+        offsetSeries.push(currentOffset);
         if (balance === 0) break;
       }
       return {
@@ -483,7 +491,8 @@
         cumulativeTotal,
         interestPayments,
         principalPayments,
-        totalPayments
+        totalPayments,
+        offsetSeries
       };
     }
 
@@ -526,6 +535,16 @@
               borderDash: [6, 4],
               fill: true,
               hidden: !showBoth
+            },
+            {
+              label: 'Offset Balance',
+              data: withOffset.offsetSeries,
+              tension: 0.15,
+              borderColor: '#38bdf8',
+              backgroundColor: 'rgba(56, 189, 248, 0.1)',
+              borderWidth: 2,
+              fill: false,
+              hidden: activeCountry === 'IL'
             }
           ]
         },
@@ -679,7 +698,8 @@
       israelTracks = Array.from({ length: safeCount }, (_, idx) => ({
         name: `Track ${idx + 1}`,
         amount: idx === safeCount - 1 ? principal - perTrack * (safeCount - 1) : perTrack,
-        rate
+        rate,
+        type: 'fixed'
       }));
     }
 
@@ -695,12 +715,20 @@
       israelTracks.forEach((track, idx) => {
         const row = document.createElement('div');
         row.style.display = 'grid';
-        row.style.gridTemplateColumns = '1fr 1fr 1fr';
+        row.style.gridTemplateColumns = '1fr 1fr 1fr 1fr';
         row.style.gap = '10px';
         row.innerHTML = `
           <div>
             <label>Track Name</label>
             <input data-track-name="${idx}" type="text" value="${track.name}" />
+          </div>
+          <div>
+            <label>Track Type</label>
+            <select data-track-type="${idx}">
+              ${israelTrackTypes.map((type) => `
+                <option value="${type.id}" ${type.id === track.type ? 'selected' : ''}>${type.label}</option>
+              `).join('')}
+            </select>
           </div>
           <div>
             <label>Track Amount</label>
@@ -718,9 +746,10 @@
     function readIsraelTracks() {
       const tracks = israelTracks.map((track, idx) => {
         const name = document.querySelector(`[data-track-name="${idx}"]`)?.value || track.name;
+        const type = document.querySelector(`[data-track-type="${idx}"]`)?.value || track.type || 'fixed';
         const amount = Number(document.querySelector(`[data-track-amount="${idx}"]`)?.value) || 0;
         const rate = Number(document.querySelector(`[data-track-rate="${idx}"]`)?.value) || 0;
-        return { name, amount, rate };
+        return { name, type, amount, rate };
       });
       israelTracks = tracks;
       return tracks;
@@ -820,6 +849,7 @@
       ];
       tracks.forEach((track) => {
         header.push(
+          `${track.name} Type`,
           `${track.name} Payment`,
           `${track.name} Interest`,
           `${track.name} Principal`,
@@ -835,8 +865,9 @@
         const totalBalance = schedules.reduce((sum, s) => sum + (s.balances[i] ?? 0), 0);
 
         const row = [i, totalPayment, totalInterest, totalPrincipal, totalBalance];
-        schedules.forEach((s) => {
+        schedules.forEach((s, idx) => {
           row.push(
+            tracks[idx]?.type || '',
             s.totalPayments[i] ?? 0,
             s.interestPayments[i] ?? 0,
             s.principalPayments[i] ?? 0,
@@ -876,6 +907,7 @@
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td>${track.name}</td>
+          <td>${israelTrackTypes.find((t) => t.id === track.type)?.label || track.type}</td>
           <td>${fmtCurrency(track.amount)}</td>
           <td>${track.rate.toFixed(2)}%</td>
           <td>${fmtCurrency(schedules[idx].payment)}</td>
