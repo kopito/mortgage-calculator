@@ -236,7 +236,7 @@
     <section class="card">
       <h2>Select Country</h2>
       <div id="countryButtons" style="display:flex; gap:10px; flex-wrap:wrap;"></div>
-      <p class="muted" style="margin:10px 0 0;">Country selection prepares region-specific settings.</p>
+      <p class="muted" style="margin:10px 0 0;" id="modeHint">Country selection prepares region-specific settings.</p>
     </section>
 
     <section class="card" id="loanInputsCard">
@@ -327,17 +327,70 @@
       </table>
     </section>
 
+    <section class="card" id="savingsInputsCard" style="display:none;">
+      <h2>Savings Inputs</h2>
+      <div class="grid">
+        <div>
+          <label for="savingsInitial" id="labelSavingsInitial">Initial Amount</label>
+          <input id="savingsInitial" type="number" min="0" step="100" value="10000" />
+        </div>
+        <div>
+          <label for="savingsRate">Annual Interest Rate (%)</label>
+          <input id="savingsRate" type="number" min="0" step="0.01" value="4.5" />
+        </div>
+        <div>
+          <label for="savingsYears">Horizon (Years)</label>
+          <input id="savingsYears" type="number" min="1" step="1" value="20" />
+        </div>
+        <div>
+          <label for="cashflowType">Cashflow Type</label>
+          <select id="cashflowType">
+            <option value="deposit" selected>Deposit (add)</option>
+            <option value="withdrawal">Withdrawal (subtract)</option>
+          </select>
+        </div>
+        <div>
+          <label for="cashflowAmount" id="labelCashflowAmount">Amount</label>
+          <input id="cashflowAmount" type="number" min="0" step="50" value="500" />
+        </div>
+        <div>
+          <label for="cashflowFrequency">Cashflow Frequency</label>
+          <select id="cashflowFrequency">
+            <option value="monthly" selected>Monthly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </div>
+        <div>
+          <label for="cashflowStartMonth">Start Month</label>
+          <input id="cashflowStartMonth" type="number" min="1" step="1" value="1" />
+        </div>
+        <div>
+          <label for="cashflowEndMonth">End Month</label>
+          <input id="cashflowEndMonth" type="number" min="1" step="1" value="240" />
+        </div>
+      </div>
+      <div class="actions">
+        <button id="savingsCalc" class="primary">Calculate</button>
+        <button id="savingsReset" class="secondary">Reset</button>
+        <button id="savingsDownload" class="secondary danger">Download Excel (CSV)</button>
+      </div>
+    </section>
+
   </div>
 
   <section class="card chart-card">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
       <div>
-        <h2>Balance Over Time</h2>
-        <p class="muted" style="margin:0;">Monthly remaining balance projection</p>
+        <h2 id="mainChartTitle">Balance Over Time</h2>
+        <p class="muted" style="margin:0;" id="mainChartSubtitle">Monthly remaining balance projection</p>
       </div>
       <div id="offsetLegend" style="display:flex; gap:8px;">
         <span class="pill green">With Offset</span>
         <span class="pill red">Without Offset</span>
+      </div>
+      <div id="savingsLegend" style="display:none; gap:8px;">
+        <span class="pill green">Balance</span>
+        <span class="pill" style="background:rgba(56,189,248,0.15);border:1px solid rgba(56,189,248,0.4);color:#7dd3fc;">Contributions</span>
       </div>
     </div>
     <canvas id="chart" height="320"></canvas>
@@ -348,7 +401,7 @@
       <h2>Summary</h2>
       <div class="chip" id="timeSavedChip">Time saved: 0 months</div>
     </div>
-    <div class="stat-grid" style="margin-top:10px;">
+    <div class="stat-grid" style="margin-top:10px;" id="mortgageStatGrid">
       <div class="stat">
         <label>Total Interest (With Offset)</label>
         <div class="value" id="interestWith">$0</div>
@@ -368,6 +421,28 @@
         <label>Payment Amount</label>
         <div class="value" id="paymentAmount">$0</div>
         <div class="muted" id="paymentFrequencyLabel">Per payment</div>
+      </div>
+    </div>
+    <div class="stat-grid" style="margin-top:10px; display:none;" id="savingsStatGrid">
+      <div class="stat">
+        <label>Final Balance</label>
+        <div class="value" id="savingsFinalBalance">$0</div>
+        <div class="muted" id="savingsHorizonLabel">After horizon</div>
+      </div>
+      <div class="stat">
+        <label>Interest Earned</label>
+        <div class="value" id="savingsInterestEarned">$0</div>
+        <div class="muted">Compounded monthly</div>
+      </div>
+      <div class="stat">
+        <label>Net Contributions</label>
+        <div class="value" id="savingsNetContributions">$0</div>
+        <div class="muted">Deposits minus withdrawals</div>
+      </div>
+      <div class="stat">
+        <label>Starting Amount</label>
+        <div class="value" id="savingsStartAmount">$0</div>
+        <div class="muted">Initial deposit</div>
       </div>
     </div>
 
@@ -405,6 +480,7 @@
   <script>
     let activeCountry = 'AU';
     let israelTracks = [];
+    const SAVINGS_MODE = 'SAV';
     const israelTrackTypes = [
       { id: 'fixed', label: 'Fixed' },
       { id: 'variable', label: 'Variable' },
@@ -418,9 +494,31 @@
       FR: { name: 'France', currency: 'EUR', locale: 'fr-FR', defaults: { principal: 300000, rate: 4.0, years: 25, offset: 30000 } },
       DE: { name: 'Germany', currency: 'EUR', locale: 'de-DE', defaults: { principal: 350000, rate: 4.2, years: 25, offset: 35000 } }
     };
+    const savingsDefaults = {
+      name: 'Saving',
+      currency: 'USD',
+      locale: 'en-US',
+      defaults: {
+        initial: 10000,
+        rate: 4.5,
+        years: 20,
+        cashflowType: 'deposit',
+        cashflowAmount: 500,
+        cashflowFrequency: 'monthly',
+        cashflowStartMonth: 1,
+        cashflowEndMonth: 240
+      }
+    };
+
+    const isSavingsMode = () => activeCountry === SAVINGS_MODE;
+
+    const getDisplayLocale = () => {
+      if (isSavingsMode()) return savingsDefaults;
+      return countries[activeCountry] || countries.AU;
+    };
 
     const fmtCurrency = (v) => {
-      const { locale, currency } = countries[activeCountry] || countries.AU;
+      const { locale, currency } = getDisplayLocale();
       return v.toLocaleString(locale, { style: 'currency', currency, maximumFractionDigits: 0 });
     };
 
@@ -437,6 +535,79 @@
       const r = annualRate / periodsPerYear / 100;
       if (r === 0) return principal / n;
       return principal * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+    }
+
+    function shouldApplySavingsCashflow(month, cashflowConfig) {
+      if (!cashflowConfig || cashflowConfig.amount === 0) return false;
+      if (month < cashflowConfig.startMonth || month > cashflowConfig.endMonth) return false;
+      if (cashflowConfig.frequency === 'yearly') {
+        const monthsSinceStart = month - cashflowConfig.startMonth;
+        return monthsSinceStart % 12 === 0;
+      }
+      return true;
+    }
+
+    function resolveSavingsCashflowDelta(cashflowConfig) {
+      const signed = cashflowConfig.type === 'withdrawal'
+        ? -Math.abs(cashflowConfig.amount)
+        : Math.abs(cashflowConfig.amount);
+      return signed;
+    }
+
+    function buildSavingsSchedule(initialAmount, annualRate, years, cashflowConfig) {
+      const totalMonths = Math.max(1, Math.round(years * 12));
+      const monthlyRate = annualRate / 12 / 100;
+      const delta = resolveSavingsCashflowDelta(cashflowConfig);
+      let balance = Math.max(0, initialAmount);
+      let totalInterest = 0;
+      let totalDeposits = 0;
+      let totalWithdrawals = 0;
+      const balances = [balance];
+      const contributionSeries = [0];
+      const cumulativeInterest = [0];
+      const cumulativeNetContributions = [0];
+      const cumulativeTotal = [initialAmount];
+
+      for (let month = 1; month <= totalMonths; month += 1) {
+        const interest = balance * monthlyRate;
+        balance += interest;
+        totalInterest += interest;
+
+        let contribution = 0;
+        if (shouldApplySavingsCashflow(month, cashflowConfig)) {
+          contribution = delta;
+          if (contribution < 0) {
+            const withdraw = Math.min(balance, Math.abs(contribution));
+            contribution = -withdraw;
+            balance -= withdraw;
+            totalWithdrawals += withdraw;
+          } else {
+            balance += contribution;
+            totalDeposits += contribution;
+          }
+        }
+
+        balances.push(balance);
+        contributionSeries.push(contribution);
+        cumulativeInterest.push(totalInterest);
+        cumulativeNetContributions.push(totalDeposits - totalWithdrawals);
+        cumulativeTotal.push(initialAmount + (totalDeposits - totalWithdrawals) + totalInterest);
+      }
+
+      return {
+        balances,
+        contributionSeries,
+        cumulativeInterest,
+        cumulativeNetContributions,
+        cumulativeTotal,
+        months: totalMonths,
+        finalBalance: balance,
+        totalInterest,
+        totalDeposits,
+        totalWithdrawals,
+        netContributions: totalDeposits - totalWithdrawals,
+        initialAmount
+      };
     }
 
     function buildSchedule(principal, annualRate, years, offsetConfig, periodsPerYear) {
@@ -650,8 +821,266 @@
       updateSummary(withOffset, withoutOffset, offsetConfig?.baseOffset ?? 0, withOffset.payment, freq.label);
     }
 
+    function updateSavingsSummary(schedule) {
+      document.getElementById('savingsFinalBalance').textContent = fmtCurrency(schedule.finalBalance);
+      document.getElementById('savingsInterestEarned').textContent = fmtCurrency(schedule.totalInterest);
+      document.getElementById('savingsNetContributions').textContent = fmtCurrency(schedule.netContributions);
+      document.getElementById('savingsStartAmount').textContent = fmtCurrency(schedule.initialAmount);
+      document.getElementById('savingsHorizonLabel').textContent = `After ${fmtMonths(schedule.months)}`;
+      document.getElementById('timeSavedChip').textContent = `Horizon: ${fmtMonths(schedule.months)}`;
+
+      const tbody = document.getElementById('summaryRows');
+      tbody.innerHTML = '';
+      const rows = [
+        {
+          label: 'Final Balance',
+          months: schedule.months,
+          interest: schedule.totalInterest,
+          principal: schedule.netContributions,
+          time: fmtCurrency(schedule.finalBalance)
+        },
+        {
+          label: 'Starting Amount',
+          months: 0,
+          interest: 0,
+          principal: schedule.initialAmount,
+          time: 'Initial'
+        }
+      ];
+      rows.forEach((row, idx) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="display:flex; align-items:center; gap:8px;">
+            <span class="pill ${idx === 0 ? 'green' : 'red'}">${row.label}</span>
+          </td>
+          <td>${fmtMonths(row.months)}</td>
+          <td>${fmtCurrency(row.interest)}</td>
+          <td>${fmtCurrency(row.principal)}</td>
+          <td>${row.time}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      const tableHead = document.querySelector('#summaryRows')?.closest('table')?.querySelector('thead tr');
+      if (tableHead) {
+        tableHead.innerHTML = `
+          <th>Scenario</th>
+          <th>Months</th>
+          <th>Interest Earned</th>
+          <th>Net Contributions</th>
+          <th>Result</th>
+        `;
+      }
+    }
+
+    function restoreMortgageSummaryHeaders() {
+      const tableHead = document.querySelector('#summaryRows')?.closest('table')?.querySelector('thead tr');
+      if (tableHead) {
+        tableHead.innerHTML = `
+          <th>Scenario</th>
+          <th>Months</th>
+          <th>Total Interest</th>
+          <th>Total Principal</th>
+          <th>Time Saved</th>
+        `;
+      }
+    }
+
+    function renderSavings(values) {
+      const cashflowConfig = {
+        type: values.cashflowType,
+        amount: values.cashflowAmount,
+        frequency: values.cashflowFrequency,
+        startMonth: values.cashflowStartMonth,
+        endMonth: values.cashflowEndMonth
+      };
+      const schedule = buildSavingsSchedule(
+        values.initial,
+        values.rate,
+        values.years,
+        cashflowConfig
+      );
+      const labels = Array.from({ length: schedule.balances.length }, (_, i) => i);
+
+      if (chart) chart.destroy();
+      chart = new Chart(chartCtx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Savings Balance',
+              data: schedule.balances,
+              tension: 0.15,
+              borderColor: '#4ade80',
+              backgroundColor: 'rgba(74, 222, 128, 0.15)',
+              borderWidth: 3,
+              fill: true
+            },
+            {
+              label: 'Period Cashflow',
+              data: schedule.contributionSeries,
+              tension: 0.15,
+              borderColor: '#38bdf8',
+              backgroundColor: 'rgba(56, 189, 248, 0.1)',
+              borderWidth: 2,
+              fill: false,
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { bottom: 16 } },
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: '#e5e7eb', usePointStyle: true } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${fmtCurrency(ctx.parsed.y)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#9ca3af' },
+              title: { display: true, text: 'Month', color: '#9ca3af' },
+              grid: { color: '#1f2937' }
+            },
+            y: {
+              ticks: { color: '#9ca3af' },
+              title: { display: true, text: 'Balance', color: '#9ca3af' },
+              grid: { color: '#1f2937' }
+            },
+            y1: {
+              position: 'right',
+              ticks: { color: '#7dd3fc' },
+              title: { display: true, text: 'Cashflow', color: '#7dd3fc' },
+              grid: { drawOnChartArea: false }
+            }
+          }
+        }
+      });
+
+      if (cumulativeChart) cumulativeChart.destroy();
+      cumulativeChart = new Chart(cumulativeCtx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Cumulative Interest',
+              data: schedule.cumulativeInterest,
+              tension: 0.15,
+              borderColor: '#f97316',
+              backgroundColor: 'rgba(249,115,22,0.18)',
+              borderWidth: 2,
+              fill: true
+            },
+            {
+              label: 'Cumulative Net Contributions',
+              data: schedule.cumulativeNetContributions,
+              tension: 0.15,
+              borderColor: '#22c55e',
+              backgroundColor: 'rgba(34,197,94,0.18)',
+              borderWidth: 2,
+              fill: true
+            },
+            {
+              label: 'Total Value (start + net + interest)',
+              data: schedule.cumulativeTotal,
+              tension: 0.15,
+              borderColor: '#38bdf8',
+              backgroundColor: 'rgba(56,189,248,0.15)',
+              borderWidth: 2,
+              fill: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: '#e5e7eb', usePointStyle: true } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label}: ${fmtCurrency(ctx.parsed.y)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#9ca3af' },
+              title: { display: true, text: 'Month', color: '#9ca3af' },
+              grid: { color: '#1f2937' }
+            },
+            y: {
+              ticks: { color: '#9ca3af' },
+              title: { display: true, text: 'Cumulative Value', color: '#9ca3af' },
+              grid: { color: '#1f2937' }
+            }
+          }
+        }
+      });
+
+      updateSavingsSummary(schedule);
+      return schedule;
+    }
+
+    function setModeChrome(isSavings) {
+      const headerTitle = document.querySelector('header h1');
+      const headerLead = document.querySelector('header .lead');
+      if (headerTitle) headerTitle.textContent = isSavings ? 'Savings Growth Dashboard' : 'Mortgage Amortization Dashboard';
+      if (headerLead) {
+        headerLead.textContent = isSavings
+          ? 'Project how deposits and withdrawals grow a savings balance over a fixed horizon.'
+          : 'Compare repayment paths with and without an offset account.';
+      }
+      document.getElementById('modeHint').textContent = isSavings
+        ? 'Saving mode projects balance growth with optional recurring cashflows.'
+        : 'Country selection prepares region-specific settings.';
+      document.getElementById('mainChartTitle').textContent = isSavings ? 'Balance Growth Over Time' : 'Balance Over Time';
+      document.getElementById('mainChartSubtitle').textContent = isSavings
+        ? 'Monthly savings balance projection'
+        : 'Monthly remaining balance projection';
+      document.getElementById('cumulativePrincipalLabel').textContent = isSavings ? 'Net contributions' : 'Principal (with offset)';
+      document.getElementById('cumulativeInterestLabel').textContent = isSavings ? 'Interest earned' : 'Interest (with offset)';
+      document.getElementById('cumulativeTotalLabel').textContent = isSavings ? 'Total value' : 'Total paid';
+
+      document.getElementById('loanInputsCard').style.display = isSavings ? 'none' : 'block';
+      document.getElementById('israelTracksCard').style.display = 'none';
+      document.getElementById('savingsInputsCard').style.display = isSavings ? 'block' : 'none';
+      document.getElementById('mortgageStatGrid').style.display = isSavings ? 'none' : 'grid';
+      document.getElementById('savingsStatGrid').style.display = isSavings ? 'grid' : 'none';
+      document.getElementById('offsetLegend').style.display = isSavings ? 'none' : 'flex';
+      document.getElementById('savingsLegend').style.display = isSavings ? 'flex' : 'none';
+      document.getElementById('compareToggleWrapper').style.display = isSavings ? 'none' : 'inline-flex';
+    }
+
+    function applySavingsMode() {
+      activeCountry = SAVINGS_MODE;
+      setModeChrome(true);
+      const currencyLabel = ` (${savingsDefaults.currency})`;
+      document.getElementById('labelSavingsInitial').textContent = `Initial Amount${currencyLabel}`;
+      document.getElementById('labelCashflowAmount').textContent = `Amount${currencyLabel}`;
+      const d = savingsDefaults.defaults;
+      document.getElementById('savingsInitial').value = d.initial;
+      document.getElementById('savingsRate').value = d.rate;
+      document.getElementById('savingsYears').value = d.years;
+      document.getElementById('cashflowType').value = d.cashflowType;
+      document.getElementById('cashflowAmount').value = d.cashflowAmount;
+      document.getElementById('cashflowFrequency').value = d.cashflowFrequency;
+      document.getElementById('cashflowStartMonth').value = d.cashflowStartMonth;
+      document.getElementById('cashflowEndMonth').value = d.cashflowEndMonth;
+      calculate();
+    }
+
     function applyCountry(countryCode) {
       activeCountry = countryCode;
+      restoreMortgageSummaryHeaders();
+      setModeChrome(false);
       const config = countries[countryCode] || countries.AU;
       const currencyLabel = ` (${config.currency})`;
       document.getElementById('labelPrincipal').textContent = `Loan Amount${currencyLabel}`;
@@ -702,6 +1131,15 @@
         });
         container.appendChild(btn);
       });
+
+      const savingsBtn = document.createElement('button');
+      savingsBtn.className = isSavingsMode() ? 'primary' : 'secondary';
+      savingsBtn.textContent = savingsDefaults.name;
+      savingsBtn.addEventListener('click', () => {
+        applySavingsMode();
+        renderCountryButtons();
+      });
+      container.appendChild(savingsBtn);
     }
 
     function initIsraelTracks(principal, rate, count) {
@@ -1117,6 +1555,27 @@
       };
     }
 
+    function readSavingsInputs() {
+      const initial = Number(document.getElementById('savingsInitial').value) || 0;
+      const rate = Number(document.getElementById('savingsRate').value) || 0;
+      const years = Number(document.getElementById('savingsYears').value) || 0;
+      const cashflowType = document.getElementById('cashflowType').value;
+      const cashflowAmount = Number(document.getElementById('cashflowAmount').value) || 0;
+      const cashflowFrequency = document.getElementById('cashflowFrequency').value;
+      const cashflowStartMonth = Number(document.getElementById('cashflowStartMonth').value) || 1;
+      const cashflowEndMonth = Number(document.getElementById('cashflowEndMonth').value) || cashflowStartMonth;
+      return {
+        initial,
+        rate,
+        years,
+        cashflowType,
+        cashflowAmount,
+        cashflowFrequency,
+        cashflowStartMonth,
+        cashflowEndMonth
+      };
+    }
+
     function validateInputs({ principal, rate, years, offsetMode, offsetStartMonth, offsetEndMonth, offsetMonthlyAdd }) {
       if (principal <= 0) return 'Principal must be greater than zero.';
       if (rate < 0) return 'Rate cannot be negative.';
@@ -1129,7 +1588,58 @@
       return null;
     }
 
+    function validateSavingsInputs({ initial, rate, years, cashflowAmount, cashflowStartMonth, cashflowEndMonth }) {
+      if (initial < 0) return 'Initial amount cannot be negative.';
+      if (rate < 0) return 'Rate cannot be negative.';
+      if (years <= 0) return 'Horizon must be at least 1 year.';
+      if (cashflowAmount < 0) return 'Cashflow amount cannot be negative. Use Deposit or Withdrawal.';
+      if (cashflowStartMonth < 1) return 'Cashflow start month must be at least 1.';
+      if (cashflowEndMonth < cashflowStartMonth) return 'Cashflow end month must be after start month.';
+      return null;
+    }
+
+    function exportSavings(values) {
+      const schedule = buildSavingsSchedule(values.initial, values.rate, values.years, {
+        type: values.cashflowType,
+        amount: values.cashflowAmount,
+        frequency: values.cashflowFrequency,
+        startMonth: values.cashflowStartMonth,
+        endMonth: values.cashflowEndMonth
+      });
+      const rows = [
+        ['Month', 'Balance', 'Cashflow', 'Cumulative Interest', 'Cumulative Net Contributions', 'Total Value']
+      ];
+      for (let i = 0; i < schedule.balances.length; i += 1) {
+        rows.push([
+          i,
+          schedule.balances[i].toFixed(2),
+          (schedule.contributionSeries[i] || 0).toFixed(2),
+          schedule.cumulativeInterest[i].toFixed(2),
+          schedule.cumulativeNetContributions[i].toFixed(2),
+          schedule.cumulativeTotal[i].toFixed(2)
+        ]);
+      }
+      const csv = rows.map((r) => r.join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'savings-projection.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
     function calculate() {
+      if (isSavingsMode()) {
+        const values = readSavingsInputs();
+        const error = validateSavingsInputs(values);
+        if (error) {
+          alert(error);
+          return;
+        }
+        renderSavings(values);
+        return;
+      }
       const values = readInputs();
       const error = validateInputs(values);
       if (error) {
@@ -1152,6 +1662,7 @@
     }
 
     document.getElementById('calc').addEventListener('click', calculate);
+    document.getElementById('savingsCalc').addEventListener('click', calculate);
     document.getElementById('download').addEventListener('click', () => {
       const values = readInputs();
       if (activeCountry === 'IL') {
@@ -1159,6 +1670,15 @@
       } else {
         exportAustralia(values);
       }
+    });
+    document.getElementById('savingsDownload').addEventListener('click', () => {
+      const values = readSavingsInputs();
+      const error = validateSavingsInputs(values);
+      if (error) {
+        alert(error);
+        return;
+      }
+      exportSavings(values);
     });
     document.getElementById('reset').addEventListener('click', () => {
       document.getElementById('principal').value = 600000;
@@ -1177,6 +1697,10 @@
       document.getElementById('showBoth').checked = true;
       calculate();
     });
+    document.getElementById('savingsReset').addEventListener('click', () => {
+      applySavingsMode();
+      renderCountryButtons();
+    });
     document.getElementById('showBoth').addEventListener('change', calculate);
     ['principal', 'rate', 'years', 'offset', 'frequency', 'offsetMode', 'offsetStartMonth', 'offsetEndMonth', 'offsetMonthlyAdd', 'trackCount'].forEach(id => {
       document.getElementById(id).addEventListener('change', () => {
@@ -1185,6 +1709,21 @@
         }
         calculate();
       });
+      document.getElementById(id).addEventListener('keyup', (e) => {
+        if (e.key === 'Enter') calculate();
+      });
+    });
+    [
+      'savingsInitial',
+      'savingsRate',
+      'savingsYears',
+      'cashflowType',
+      'cashflowAmount',
+      'cashflowFrequency',
+      'cashflowStartMonth',
+      'cashflowEndMonth'
+    ].forEach((id) => {
+      document.getElementById(id).addEventListener('change', calculate);
       document.getElementById(id).addEventListener('keyup', (e) => {
         if (e.key === 'Enter') calculate();
       });
